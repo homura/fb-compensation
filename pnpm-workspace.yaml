@@ -1,0 +1,4 @@
+publicHoistPattern:
+- "*@nextui-org/*"
+- "*eslint*"
+- "*prettier*"
