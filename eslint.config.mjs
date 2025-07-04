@@ -47,6 +47,7 @@ const eslintConfig = [
       'simple-import-sort/exports': 'error',
       'unused-imports/no-unused-imports': 'error',
     },
+    ignorePatterns: ['src/components/ui/*'],
   }),
 ]
 
