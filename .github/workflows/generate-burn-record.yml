@@ -1,0 +1,75 @@
+name: Generate Burn Records
+
+on:
+  workflow_dispatch:
+    inputs:
+      from_block:
+        description: "Start block number"
+        required: true
+        type: string
+      to_block:
+        description: "End block number"
+        required: true
+        type: string
+      testnet:
+        description: "Testnet flag"
+        default: 'false'
+        type: choice
+        options:
+          - true
+          - false
+
+jobs:
+  generate-burn-records:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: develop
+          fetch-depth: 0 # Needed for git diff to work properly
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+          cache: "bun"
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Generate burn records
+        run: |
+          bun devtools/run-generate-burn-record.ts \
+            --fromBlock ${{ github.event.inputs.from_block }} \
+            --toBlock ${{ github.event.inputs.to_block }} \
+            --testnet ${{ github.event.inputs.testnet }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Create commit
+        id: commit
+        run: |
+          git add ./.data
+          git diff --quiet && git diff --staged --quiet || \
+          git commit -m "chore: update burn records for blocks ${{ github.event.inputs.from_block }} to ${{ github.event.inputs.to_block }}"
+          echo "commit_hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Create Pull Request
+        if: steps.commit.outputs.commit_hash != ''
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update burn records for blocks ${{ github.event.inputs.from_block }} to ${{ github.event.inputs.to_block }}"
+          title: "Generate burning record ${{ github.event.inputs.from_block }} to ${{ github.event.inputs.to_block }}"
+          body: "Automated PR to update burn records from block ${{ github.event.inputs.from_block }} to ${{ github.event.inputs.to_block }}"
+          branch: "feature/update-burn-records-${{ github.event.inputs.from_block }}-${{ github.event.inputs.to_block }}"
+          base: develop
