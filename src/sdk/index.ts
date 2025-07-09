@@ -1,1 +1,1 @@
-export { RPC, Indexer } from './lumos'
+export { Indexer, RPC } from './lumos'
