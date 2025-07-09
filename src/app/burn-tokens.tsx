@@ -4,7 +4,7 @@ import { parseAddress, TransactionSkeletonType } from '@ckb-lumos/lumos/helpers'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import * as R from 'remeda'
 import { toast } from 'sonner'
-import { useSignMessage } from 'wagmi'
+import { useAccount, useSignMessage } from 'wagmi'
 import { SignMessageMutateAsync } from 'wagmi/query'
 
 import { Button } from '@/components/ui/button'
@@ -144,19 +144,15 @@ async function signTx(
   return helpers.createTransactionFromSkeleton(tx)
 }
 
-export default function BurnTokens({
-  ethAddress,
-}: {
-  ethAddress?: `0x${string}`
-}) {
+export default function BurnTokens() {
+  const { address: ethAddress } = useAccount()
   const ckbAddress = ethAddress ? generateCKBAddress(ethAddress) : ''
   const [userTokenCells, setUserTokenCells] = useState<TokenCell[]>([])
   const { signMessageAsync } = useSignMessage()
   useEffect(() => {
-    if (ckbAddress) {
-      const forcebridgeHelper = createForceBridgeHelper()
-      forcebridgeHelper.fetchUserTokenCells(ckbAddress).then(setUserTokenCells)
-    }
+    if (!ckbAddress) return
+    const forcebridgeHelper = createForceBridgeHelper()
+    forcebridgeHelper.fetchUserTokenCells(ckbAddress).then(setUserTokenCells)
   }, [ckbAddress])
   const [showZeroToken, setShowZeroToken] = useState(false)
   const userTokens = useMemo(() => {

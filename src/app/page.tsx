@@ -107,7 +107,7 @@ export default function Home() {
               <TabsTrigger value="history">History</TabsTrigger>
             </TabsList>
             <TabsContent value="balance" className="my-2">
-              <BurnTokens ethAddress={address} />
+              <BurnTokens />
             </TabsContent>
             <TabsContent value="history">
               <History />
