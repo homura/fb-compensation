@@ -1,0 +1,84 @@
+name: Fill Transfer Hashes
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      testnet:
+        default: "false"
+        required: true
+        type: choice
+        options:
+          - "true"
+          - "false"
+      aggrWeekDir:
+        description: "Format: {yyyymmdd}-{yyyymmdd}"
+        required: true
+        type: string
+
+jobs:
+  fill-transfer-hashes:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Get cache directory
+        id: bun-cache
+        run: echo "dir=$(bun pm cache dir)" >> $GITHUB_OUTPUT
+
+      - name: Setup Bun cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.bun-cache.outputs.dir }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Fill transfer hashes
+        id: fill-transfer-hashes
+        run: |
+          bun devtools/run-fill-transfer-to-burn-record.ts \
+            --testnet ${{ inputs.testnet || 'false' }} \
+            --aggrWeekDir ${{ inputs.aggrWeekDir }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Create commit
+        id: commit
+        run: |
+          git add .data
+          [ -d .data-testnet ] && git add .data-testnet
+          git diff --quiet && git diff --staged --quiet || \
+          git commit -m "chore: fill transfer hashes for week ${{ inputs.aggrWeekDir }}"
+          echo "commit_hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Create Pull Request
+        if: steps.commit.outputs.commit_hash != ''
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: fill transfer hashes for week ${{ inputs.aggrWeekDir }}"
+          title: "Fill transfer transaction hashes for week ${{ inputs.aggrWeekDir }}"
+          body: |
+            This PR fills transfer transaction hashes back to the burning record for week directory: ${{ inputs.aggrWeekDir }}
+            Testnet: ${{ inputs.testnet }}
+          branch: "feature/fill-transfer-hashes-${{ inputs.aggrWeekDir }}"
+          base: develop

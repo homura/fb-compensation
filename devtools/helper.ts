@@ -1,3 +1,5 @@
+import fs from 'node:fs/promises'
+
 import {
   BI,
   BIish,
@@ -33,13 +35,41 @@ import {
   take,
 } from 'rxjs'
 
-import { Indexer } from '@/sdk'
 import TestnetTokens from '@/sdk/forcebridge/testnet-tokens.json'
 import MainnetTokens from '@/sdk/forcebridge/tokens.json'
 
 const DEFAULT_BATCH_SIZE = 20
 
-function createContext({ isTestnet }: { isTestnet: boolean }) {
+export const logger: {
+  debug: (...msg: unknown[]) => void
+  info: (...msg: unknown[]) => void
+  warn: (...msg: unknown[]) => void
+  error: (...msg: unknown[]) => void
+} = console
+
+let context: Context | undefined
+export function initContext({ isTestnet = false }: { isTestnet?: boolean }) {
+  context = createContext({ isTestnet })
+  return context
+}
+
+export function getContext(): Context {
+  asserts(context != null)
+  return context
+}
+
+type Context = {
+  isTestnet: boolean
+  rpc: RPC
+  tokens: TokenInfo[]
+  scriptConfigs: { sudt: ScriptConfig; legacyOmnilock: ScriptConfig }
+}
+
+function createContext({
+  isTestnet = false,
+}: {
+  isTestnet?: boolean
+}): Context {
   const IS_TESTNET: boolean = isTestnet
 
   const CKB_RPC_URL = IS_TESTNET
@@ -83,7 +113,7 @@ function createContext({ isTestnet }: { isTestnet: boolean }) {
   ) as TokenInfo[]
 
   return {
-    indexer: new Indexer(CKB_RPC_URL),
+    isTestnet,
     rpc: new RPC(CKB_RPC_URL),
     scriptConfigs: {
       sudt: SCRIPT_CONFIG_SUDT,
@@ -93,14 +123,8 @@ function createContext({ isTestnet }: { isTestnet: boolean }) {
   }
 }
 
-export let context: ReturnType<typeof createContext>
-
-export function initContext(isTestnet: boolean) {
-  context = createContext({ isTestnet })
-}
-
 function isLegacyOmnilockScript(script: Script): boolean {
-  const { scriptConfigs } = context
+  const { scriptConfigs } = getContext()
   return (
     script.codeHash === scriptConfigs.legacyOmnilock.CODE_HASH &&
     script.hashType === scriptConfigs.legacyOmnilock.HASH_TYPE
@@ -108,7 +132,7 @@ function isLegacyOmnilockScript(script: Script): boolean {
 }
 
 function isSudtScript(script: Script): boolean {
-  const { scriptConfigs } = context
+  const { scriptConfigs } = getContext()
   return (
     script.codeHash === scriptConfigs.sudt.CODE_HASH &&
     script.hashType === scriptConfigs.sudt.HASH_TYPE
@@ -125,17 +149,9 @@ type TokenInfo = {
   sudtArgs: string
 }
 
-function getTokenInfo(
-  filter: { sudtArgs: string } | { address: string; network: string },
-): TokenInfo | undefined {
-  const { tokens } = context
-  if ('sudtArgs' in filter) {
-    return tokens.find((token) => token.sudtArgs === filter.sudtArgs)
-  }
-  return tokens.find(
-    (token) =>
-      token.address === filter.address && token.source === filter.network,
-  )
+function getTokenInfo(filter: { sudtArgs: string }): TokenInfo | undefined {
+  const { tokens } = getContext()
+  return tokens.find((token) => token.sudtArgs === filter.sudtArgs)
 }
 
 export type ResolvedOutput = { data: HexString; cellOutput: Output }
@@ -164,7 +180,7 @@ export function fetchBurnSummaries({
   fromBlock: BIish
   toBlock?: BIish
 }): Observable<BurnSummary> {
-  const { tokens, rpc, scriptConfigs } = context
+  const { tokens, rpc, scriptConfigs } = getContext()
   const pageSize = 100
 
   const generateSearchKey = (
@@ -222,7 +238,7 @@ export function fetchBurnSummaries({
 export function fetchTransactions(
   txHashes: ObservableInput<Hash>,
 ): Observable<CKBComponents.Transaction> {
-  const { rpc } = context
+  const { rpc } = getContext()
 
   return from(txHashes).pipe(
     map((txHash) => ['getTransaction', txHash] as ['getTransaction', string]),
@@ -235,6 +251,8 @@ export function fetchTransactions(
         >
       ).then<CKBComponents.TransactionWithStatus[]>((txs) => {
         txs.forEach((tx, i) => {
+          asserts(requests[i] != null)
+
           if (!tx.transaction) {
             throw new Error(`Failed to fetch transaction ${requests[i][1]}`)
           }
@@ -289,17 +307,19 @@ export function resolveTransaction(
 }
 
 export type BurnRecord = {
-  erc20Token: string
+  sudtArgs: string
+  evmTokenAddress: string
   evmReceiverAddress: string
-  network: 'Ethereum' | 'BSC'
+  source: 'Ethereum' | 'BSC'
   amount: string
   formattedAmount: string
-  txHash: string
+  burnTxHash: string
+  transferTxHash: string
 }
 
 export function mapToBurnRecord(resolvedTx: ResolvedTransaction): BurnRecord[] {
   if (resolvedTx.outputs.some((output) => output.cellOutput.type != null)) {
-    logger.info(
+    logger.warn(
       `Invalid burn tx found: ${resolvedTx.hash}, the output type is not null`,
     )
     return []
@@ -325,58 +345,93 @@ export function mapToBurnRecord(resolvedTx: ResolvedTransaction): BurnRecord[] {
         return undefined
       }
 
+      asserts(
+        resolvedTx.inputs[i]?.data != null,
+        `Cannot find data for input#${i} in tx ${resolvedTx.hash}`,
+      )
       const amount = Uint128.unpack(resolvedTx.inputs[i].data)
 
       return {
-        erc20Token: tokenInfo.address,
-        evmReceiverAddress: '0x' + lock.args.slice(2, 42),
-        network: tokenInfo.source,
-        amount: amount.toString(),
+        source: tokenInfo.source,
+        evmTokenAddress: tokenInfo.address,
+        evmReceiverAddress: '0x' + lock.args.slice(4, 44),
         formattedAmount:
           formatUnit(amount, tokenInfo.decimal) + ' ' + tokenInfo.symbol,
-        txHash: resolvedTx.hash,
+        amount: amount.toString(),
+        sudtArgs: tokenInfo.sudtArgs,
+        burnTxHash: resolvedTx.hash,
+        transferTxHash: '',
       }
     })
     .filter((x) => x != null)
 }
 
-type AggrBurnRecord = Omit<BurnRecord, 'txHash'>
+export function startFillTransferTxHash(
+  aggrBurnRecords: AggrBurnRecord[],
+): (burnRecords: BurnRecord[]) => BurnRecord[] {
+  const group = Object.fromEntries(
+    aggrBurnRecords.map((record) => [
+      `${record.sudtArgs}-${record.evmReceiverAddress}`,
+      record.transferTxHash,
+    ]),
+  )
+
+  return (burnRecords: BurnRecord[]) =>
+    burnRecords.map((record) => {
+      return {
+        ...record,
+        transferTxHash:
+          group[`${record.sudtArgs}-${record.evmReceiverAddress}`] ?? '',
+      }
+    })
+}
+
+export type AggrBurnRecord = Omit<BurnRecord, 'burnTxHash'>
 
 export function aggregateBurnRecords(records: BurnRecord[]): AggrBurnRecord[] {
   const aggregatedRecords = Object.groupBy(
     records,
-    (record) =>
-      `${record.network}-${record.erc20Token}-${record.evmReceiverAddress}`,
+    (record) => `${record.sudtArgs}-${record.evmReceiverAddress}`,
   )
-  return Object.entries(aggregatedRecords).reduce((acc, [key, group]) => {
-    const [network, erc20Token, evmReceiverAddress] = key.split('-')
+  return Object.entries(aggregatedRecords)
+    .reduce((acc, [key, group]) => {
+      const [sudtArgs, evmReceiverAddress] = key.split('-')
+      asserts(
+        sudtArgs != null && evmReceiverAddress != null,
+        'Invalid aggr record',
+      )
 
-    if (!group) {
-      throw new Error('impossible')
-    }
+      if (!group) {
+        throw new Error(`Cannot find group of the key: ${key}`)
+      }
 
-    const tokenInfo = getTokenInfo({
-      address: erc20Token,
-      network,
-    })
-    if (!tokenInfo) {
-      throw new Error(`Cannot find token info for ${erc20Token} on ${network}`)
-    }
-    const amount = group.reduce(
-      (sum, record) => sum.add(record.amount),
-      BI.from(0),
+      const tokenInfo = getTokenInfo({ sudtArgs })
+      if (!tokenInfo) {
+        throw new Error(`Cannot find token info for sudt: ${sudtArgs}`)
+      }
+      const amount = group.reduce(
+        (sum, record) => sum.add(record.amount),
+        BI.from(0),
+      )
+      const formattedAmount =
+        formatUnit(amount, tokenInfo.decimal) + ' ' + tokenInfo.symbol
+
+      const aggrRecord: AggrBurnRecord = {
+        evmTokenAddress: tokenInfo.address,
+        evmReceiverAddress,
+        source: tokenInfo.source,
+        amount: amount.toString(),
+        formattedAmount,
+        sudtArgs: tokenInfo.sudtArgs,
+        transferTxHash: '',
+      }
+      return acc.concat(aggrRecord)
+    }, [] as AggrBurnRecord[])
+    .sort((a, b) =>
+      (a.source + a.evmTokenAddress + a.evmReceiverAddress).localeCompare(
+        b.source + b.evmTokenAddress + b.evmReceiverAddress,
+      ),
     )
-    const formattedAmount =
-      formatUnit(amount, tokenInfo.decimal) + ' ' + tokenInfo.symbol
-
-    return acc.concat({
-      erc20Token,
-      evmReceiverAddress,
-      network: network as BurnRecord['network'],
-      amount: amount.toString(),
-      formattedAmount,
-    } satisfies AggrBurnRecord)
-  }, [] as AggrBurnRecord[])
 }
 
 function resolveInput(
@@ -419,9 +474,22 @@ export function getEnv(key: string, defaultValue?: string): string {
   return (value || defaultValue)!
 }
 
-export const logger: {
-  debug: (...msg: unknown[]) => void
-  info: (...msg: unknown[]) => void
-  warn: (...msg: unknown[]) => void
-  error: (...msg: unknown[]) => void
-} = console
+const DATA_DIR = '.data'
+const DATA_DIR_TESTNET = '.data-testnet'
+
+export async function getDataDir(): Promise<string> {
+  const dataFolder = getContext().isTestnet ? DATA_DIR_TESTNET : DATA_DIR
+  await fs
+    .access(dataFolder, fs.constants.F_OK)
+    .catch(() => fs.mkdir(dataFolder))
+  return dataFolder
+}
+
+export function asserts(
+  condition: unknown,
+  message = 'Assertion failed',
+): asserts condition {
+  if (!condition) {
+    throw new Error(message)
+  }
+}

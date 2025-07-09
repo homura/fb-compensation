@@ -1,0 +1,86 @@
+name: Generate Burn Record
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      testnet:
+        default: "false"
+        required: true
+        type: choice
+        options:
+          - "true"
+          - "false"
+      aggrBurn:
+        default: "false"
+        type: choice
+        options:
+          - "true"
+          - "false"
+  schedule:
+    - cron: "10 16 * * *"
+
+jobs:
+  generate-burn-records:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: develop
+          fetch-depth: 0
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Get cache directory
+        id: bun-cache
+        run: echo "dir=$(bun pm cache dir)" >> $GITHUB_OUTPUT
+
+      - name: Setup Bun cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.bun-cache.outputs.dir }}
+          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate burn records
+        id: generate-burn-records
+        run: |
+          bun devtools/run-generate-burn-record.ts \
+            --testnet ${{ inputs.testnet || 'false' }} \
+            --aggrBurn ${{ inputs.aggrBurn || 'false' }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Create commit
+        id: commit
+        run: |
+          git add .data
+          [ -d .data-testnet ] && git add .data-testnet
+          git diff --quiet && git diff --staged --quiet || \
+          git commit -m "chore: update burn records ${{ steps.generate-burn-records.outputs.from_block}} to ${{steps.generate-burn-records.outputs.to_block}}"
+          echo "commit_hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Create Pull Request
+        if: steps.commit.outputs.commit_hash != ''
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update burn records for blocks ${{ steps.generate-burn-records.outputs.from_block }} to ${{ steps.generate-burn-records.outputs.to_block }}"
+          title: "Generate burning record ${{ steps.generate-burn-records.outputs.from_block }} to ${{ steps.generate-burn-records.outputs.to_block }}"
+          body: "Automated PR to update burn records from block ${{ steps.generate-burn-records.outputs.from_block }} to ${{ steps.generate-burn-records.outputs.to_block }}"
+          branch: "feature/update-burn-records-${{ steps.generate-burn-records.outputs.from_block }}-${{ steps.generate-burn-records.outputs.to_block }}"
+          base: develop
