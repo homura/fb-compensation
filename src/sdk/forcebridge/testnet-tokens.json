@@ -160,5 +160,23 @@
       "bridgedUan": "Test_2.ckb|fb.Test_2",
       "bridgedDisplayName": "Test_2 (via Force Bridge from ETH)"
     }
+  },
+  {
+    "address": "0x0000000000000000000000000000000000000000",
+    "symbol": "Test_3|eth",
+    "name": "Wrapped Test_3 (Force Bridge from Ethereum)",
+    "decimal": 18,
+    "logoURI": "https://cryptologos.cc/logos/ethereum-eth-logo.svg?v=002",
+    "sudtArgs": "0x6b7da3cc91d54d3edba00d88f11c0c1d4ec9a84daa39f759e834e8a001248760",
+    "source": "Ethereum",
+    "bridge": "ForceBridge",
+    "ckbExplorerUrl": "https://pudge.explorer.nervos.org/sudt/0x6a00931d7a84706b0ab620c16626fd65de159f9da2682fd9e9b5b3d5c66309f4",
+    "ckbL2ContractAddress": "",
+    "uanInfo": {
+      "sourceUan": "ETH.Test_3",
+      "sourceDisplayName": "Test_3",
+      "bridgedUan": "Test_3.ckb|fb.Test_3",
+      "bridgedDisplayName": "Test_3 (via Force Bridge from ETH)"
+    }
   }
 ]

@@ -48,3 +48,11 @@ export function calculateFeeCompatible(size: number, feeRate: BIish): BI {
   }
   return BI.from(fee)
 }
+
+export function trunkTxHash(
+  txHash: string,
+  startLen: number = 8,
+  endLen: number = 8,
+) {
+  return `${txHash.slice(0, startLen)}...${txHash.slice(-endLen)}`
+}
