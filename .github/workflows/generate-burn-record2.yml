@@ -1,4 +1,4 @@
-name: Generate Burn Records
+name: Generate Burn Record2
 
 permissions:
   contents: write
@@ -8,7 +8,7 @@ on:
   schedule:
     # TODO: change to daily basis
     # - cron: "10 16 * * *"
-    - cron: "20 * * * *"
+    - cron: "40 * * * *"
 
 jobs:
   generate-burn-records:
