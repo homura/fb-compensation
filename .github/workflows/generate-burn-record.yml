@@ -5,23 +5,9 @@ permissions:
   pull-requests: write
 
 on:
-  workflow_dispatch:
-    inputs:
-      from_block:
-        description: "Start block number"
-        required: true
-        type: string
-      to_block:
-        description: "End block number"
-        required: true
-        type: string
-      testnet:
-        description: "Testnet flag"
-        default: "false"
-        type: choice
-        options:
-          - "true"
-          - "false"
+  schedule:
+    # - cron: "10 16 * * *"
+    - cron: "*/5 * * * *"
 
 jobs:
   generate-burn-records:
@@ -54,11 +40,8 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Generate burn records
-        run: |
-          bun devtools/run-generate-burn-record.ts \
-            --fromBlock ${{ github.event.inputs.from_block }} \
-            --toBlock ${{ github.event.inputs.to_block }} \
-            --testnet ${{ github.event.inputs.testnet }}
+        id: generate-burn-records
+        run: bun devtools/run-generate-burn-record.ts --testnet true
 
       - name: Configure Git
         run: |
@@ -70,7 +53,7 @@ jobs:
         run: |
           git add ./.data
           git diff --quiet && git diff --staged --quiet || \
-          git commit -m "chore: update burn records for blocks ${{ github.event.inputs.from_block }} to ${{ github.event.inputs.to_block }}"
+          git commit -m "chore: update burn records ${{ steps.generate-burn-records.outputs.from_block}} to ${{steps.generate-burn-records.outputs.to_block}}"
           echo "commit_hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
 
       - name: Create Pull Request
@@ -78,8 +61,8 @@ jobs:
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore: update burn records for blocks ${{ github.event.inputs.from_block }} to ${{ github.event.inputs.to_block }}"
-          title: "Generate burning record ${{ github.event.inputs.from_block }} to ${{ github.event.inputs.to_block }}"
-          body: "Automated PR to update burn records from block ${{ github.event.inputs.from_block }} to ${{ github.event.inputs.to_block }}"
-          branch: "feature/update-burn-records-${{ github.event.inputs.from_block }}-${{ github.event.inputs.to_block }}"
+          commit-message: "chore: update burn records for blocks ${{ steps.generate-burn-records.outputs.from_block }} to ${{ steps.generate-burn-records.outputs.to_block }}"
+          title: "Generate burning record ${{ steps.generate-burn-records.outputs.from_block }} to ${{ steps.generate-burn-records.outputs.to_block }}"
+          body: "Automated PR to update burn records from block ${{ steps.generate-burn-records.outputs.from_block }} to ${{ steps.generate-burn-records.outputs.to_block }}"
+          branch: "feature/update-burn-records-${{ steps.generate-burn-records.outputs.from_block }}-${{ steps.generate-burn-records.outputs.to_block }}"
           base: develop

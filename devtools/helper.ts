@@ -83,6 +83,7 @@ function createContext({ isTestnet }: { isTestnet: boolean }) {
   ) as TokenInfo[]
 
   return {
+    isTestnet,
     indexer: new Indexer(CKB_RPC_URL),
     rpc: new RPC(CKB_RPC_URL),
     scriptConfigs: {
@@ -348,35 +349,43 @@ export function aggregateBurnRecords(records: BurnRecord[]): AggrBurnRecord[] {
     (record) =>
       `${record.network}-${record.erc20Token}-${record.evmReceiverAddress}`,
   )
-  return Object.entries(aggregatedRecords).reduce((acc, [key, group]) => {
-    const [network, erc20Token, evmReceiverAddress] = key.split('-')
+  return Object.entries(aggregatedRecords)
+    .reduce((acc, [key, group]) => {
+      const [network, erc20Token, evmReceiverAddress] = key.split('-')
 
-    if (!group) {
-      throw new Error('impossible')
-    }
+      if (!group) {
+        throw new Error(`Cannot find group of the key: ${key}`)
+      }
 
-    const tokenInfo = getTokenInfo({
-      address: erc20Token,
-      network,
-    })
-    if (!tokenInfo) {
-      throw new Error(`Cannot find token info for ${erc20Token} on ${network}`)
-    }
-    const amount = group.reduce(
-      (sum, record) => sum.add(record.amount),
-      BI.from(0),
+      const tokenInfo = getTokenInfo({
+        address: erc20Token,
+        network,
+      })
+      if (!tokenInfo) {
+        throw new Error(
+          `Cannot find token info for ${erc20Token} on ${network}`,
+        )
+      }
+      const amount = group.reduce(
+        (sum, record) => sum.add(record.amount),
+        BI.from(0),
+      )
+      const formattedAmount =
+        formatUnit(amount, tokenInfo.decimal) + ' ' + tokenInfo.symbol
+
+      return acc.concat({
+        erc20Token,
+        evmReceiverAddress,
+        network: network as BurnRecord['network'],
+        amount: amount.toString(),
+        formattedAmount,
+      } satisfies AggrBurnRecord)
+    }, [] as AggrBurnRecord[])
+    .sort((a, b) =>
+      (a.network + a.erc20Token + a.evmReceiverAddress).localeCompare(
+        b.network + b.erc20Token + b.evmReceiverAddress,
+      ),
     )
-    const formattedAmount =
-      formatUnit(amount, tokenInfo.decimal) + ' ' + tokenInfo.symbol
-
-    return acc.concat({
-      erc20Token,
-      evmReceiverAddress,
-      network: network as BurnRecord['network'],
-      amount: amount.toString(),
-      formattedAmount,
-    } satisfies AggrBurnRecord)
-  }, [] as AggrBurnRecord[])
 }
 
 function resolveInput(
