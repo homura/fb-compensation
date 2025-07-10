@@ -1,14 +1,13 @@
-name: Generate Burn Record2
+name: Generate Burn Record
 
 permissions:
   contents: write
   pull-requests: write
 
 on:
+  workflow_dispatch:
   schedule:
-    # TODO: change to daily basis
-    # - cron: "10 16 * * *"
-    - cron: "40 * * * *"
+    - cron: "10 16 * * *"
 
 jobs:
   generate-burn-records:
