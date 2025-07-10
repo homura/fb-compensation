@@ -32,6 +32,8 @@ import {
 } from '@/sdk/forcebridge'
 import { config, indexer, rpc } from '@/sdk/lumos'
 
+import NoData from './no-data'
+
 const SECP_SIGNATURE_PLACEHOLDER = hexify(
   new Uint8Array(
     commons.omnilock.OmnilockWitnessLock.pack({
@@ -243,6 +245,12 @@ export default function BurnTokens() {
         <Label htmlFor="show-zero-token">show 0 balance tokens</Label>
       </div>
       <ul>
+        {userTokens.length === 0 && (
+          <div className="flex flex-col items-center justify-center p-2">
+            <NoData />
+            No Assets Available for Burning
+          </div>
+        )}
         {userTokens.map((v) => (
           <>
             <li key={v.sudtArgs} className="flex justify-between">
@@ -255,7 +263,7 @@ export default function BurnTokens() {
       </ul>
       <Button
         className="mt-2 w-full"
-        disabled={!ckbAddress || !userTokenCells.length}
+        disabled={!ckbAddress || !userTokens.length}
         onClick={onViewSummaryDialog}
       >
         Burn

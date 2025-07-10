@@ -28,6 +28,8 @@ import {
   TokenInfo,
 } from '@/sdk/forcebridge'
 
+import NoData from './no-data'
+
 const EXPLORER_URL = isMainnet
   ? 'https://explorer.nervos.org'
   : 'https://testnet.explorer.nervos.org'
@@ -82,6 +84,11 @@ export default function History() {
 
   return (
     <div>
+      {burnTxs.length === 0 && (
+        <div className="flex flex-col items-center justify-center p-2">
+          <NoData /> No Burn History
+        </div>
+      )}
       {burnTxs.map((v, idx) => (
         <React.Fragment key={v.txHash}>
           <div className="p-2">
