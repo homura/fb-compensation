@@ -1,3 +1,5 @@
+import { parseArgs } from 'node:util'
+
 import {
   BI,
   BIish,
@@ -38,6 +40,24 @@ import TestnetTokens from '@/sdk/forcebridge/testnet-tokens.json'
 import MainnetTokens from '@/sdk/forcebridge/tokens.json'
 
 const DEFAULT_BATCH_SIZE = 20
+
+export const logger: {
+  debug: (...msg: unknown[]) => void
+  info: (...msg: unknown[]) => void
+  warn: (...msg: unknown[]) => void
+  error: (...msg: unknown[]) => void
+} = console
+
+export const context = (() => {
+  const { values } = parseArgs({
+    options: {
+      testnet: { type: 'string' },
+    },
+  })
+
+  const isTestnet = values.testnet === 'true'
+  return createContext({ isTestnet })
+})()
 
 function createContext({ isTestnet }: { isTestnet: boolean }) {
   const IS_TESTNET: boolean = isTestnet
@@ -94,12 +114,6 @@ function createContext({ isTestnet }: { isTestnet: boolean }) {
   }
 }
 
-export let context: ReturnType<typeof createContext>
-
-export function initContext(isTestnet: boolean) {
-  context = createContext({ isTestnet })
-}
-
 function isLegacyOmnilockScript(script: Script): boolean {
   const { scriptConfigs } = context
   return (
@@ -126,17 +140,9 @@ type TokenInfo = {
   sudtArgs: string
 }
 
-function getTokenInfo(
-  filter: { sudtArgs: string } | { address: string; network: string },
-): TokenInfo | undefined {
+function getTokenInfo(filter: { sudtArgs: string }): TokenInfo | undefined {
   const { tokens } = context
-  if ('sudtArgs' in filter) {
-    return tokens.find((token) => token.sudtArgs === filter.sudtArgs)
-  }
-  return tokens.find(
-    (token) =>
-      token.address === filter.address && token.source === filter.network,
-  )
+  return tokens.find((token) => token.sudtArgs === filter.sudtArgs)
 }
 
 export type ResolvedOutput = { data: HexString; cellOutput: Output }
@@ -290,12 +296,14 @@ export function resolveTransaction(
 }
 
 export type BurnRecord = {
-  erc20Token: string
+  sudtArgs: string
+  evmTokenAddress: string
   evmReceiverAddress: string
-  network: 'Ethereum' | 'BSC'
+  source: 'Ethereum' | 'BSC'
   amount: string
   formattedAmount: string
-  txHash: string
+  burnTxHash: string
+  transferTxHash: string
 }
 
 export function mapToBurnRecord(resolvedTx: ResolvedTransaction): BurnRecord[] {
@@ -329,42 +337,40 @@ export function mapToBurnRecord(resolvedTx: ResolvedTransaction): BurnRecord[] {
       const amount = Uint128.unpack(resolvedTx.inputs[i].data)
 
       return {
-        erc20Token: tokenInfo.address,
+        source: tokenInfo.source,
+        evmTokenAddress: tokenInfo.address,
         evmReceiverAddress: '0x' + lock.args.slice(2, 42),
-        network: tokenInfo.source,
-        amount: amount.toString(),
         formattedAmount:
           formatUnit(amount, tokenInfo.decimal) + ' ' + tokenInfo.symbol,
-        txHash: resolvedTx.hash,
+        amount: amount.toString(),
+        sudtArgs: tokenInfo.sudtArgs,
+        burnTxHash: resolvedTx.hash,
+        transferTxHash: '',
       }
     })
     .filter((x) => x != null)
 }
 
-type AggrBurnRecord = Omit<BurnRecord, 'txHash'>
+type AggrBurnRecord = Omit<BurnRecord, 'burnTxHash'> & {
+  txHash?: string
+}
 
 export function aggregateBurnRecords(records: BurnRecord[]): AggrBurnRecord[] {
   const aggregatedRecords = Object.groupBy(
     records,
-    (record) =>
-      `${record.network}-${record.erc20Token}-${record.evmReceiverAddress}`,
+    (record) => `${record.sudtArgs}-${record.evmReceiverAddress}`,
   )
   return Object.entries(aggregatedRecords)
     .reduce((acc, [key, group]) => {
-      const [network, erc20Token, evmReceiverAddress] = key.split('-')
+      const [sudtArgs, evmReceiverAddress] = key.split('-')
 
       if (!group) {
         throw new Error(`Cannot find group of the key: ${key}`)
       }
 
-      const tokenInfo = getTokenInfo({
-        address: erc20Token,
-        network,
-      })
+      const tokenInfo = getTokenInfo({ sudtArgs })
       if (!tokenInfo) {
-        throw new Error(
-          `Cannot find token info for ${erc20Token} on ${network}`,
-        )
+        throw new Error(`Cannot find token info for sudt: ${sudtArgs}`)
       }
       const amount = group.reduce(
         (sum, record) => sum.add(record.amount),
@@ -373,17 +379,20 @@ export function aggregateBurnRecords(records: BurnRecord[]): AggrBurnRecord[] {
       const formattedAmount =
         formatUnit(amount, tokenInfo.decimal) + ' ' + tokenInfo.symbol
 
-      return acc.concat({
-        erc20Token,
+      const aggrRecord: AggrBurnRecord = {
+        evmTokenAddress: tokenInfo.address,
         evmReceiverAddress,
-        network: network as BurnRecord['network'],
+        source: tokenInfo.source,
         amount: amount.toString(),
         formattedAmount,
-      } satisfies AggrBurnRecord)
+        sudtArgs: tokenInfo.sudtArgs,
+        transferTxHash: '',
+      }
+      return acc.concat(aggrRecord)
     }, [] as AggrBurnRecord[])
     .sort((a, b) =>
-      (a.network + a.erc20Token + a.evmReceiverAddress).localeCompare(
-        b.network + b.erc20Token + b.evmReceiverAddress,
+      (a.source + a.evmTokenAddress + a.evmReceiverAddress).localeCompare(
+        b.source + b.evmTokenAddress + b.evmReceiverAddress,
       ),
     )
 }
@@ -427,10 +436,3 @@ export function getEnv(key: string, defaultValue?: string): string {
   }
   return (value || defaultValue)!
 }
-
-export const logger: {
-  debug: (...msg: unknown[]) => void
-  info: (...msg: unknown[]) => void
-  warn: (...msg: unknown[]) => void
-  error: (...msg: unknown[]) => void
-} = console
