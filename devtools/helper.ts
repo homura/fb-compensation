@@ -52,14 +52,22 @@ export const context = (() => {
   const { values } = parseArgs({
     options: {
       testnet: { type: 'string' },
+      aggrBurn: { type: 'string' },
     },
   })
 
   const isTestnet = values.testnet === 'true'
-  return createContext({ isTestnet })
+  const aggrBurnRecord = values.aggrBurn === 'true'
+  return createContext({ isTestnet, aggrBurnRecord })
 })()
 
-function createContext({ isTestnet }: { isTestnet: boolean }) {
+function createContext({
+  isTestnet = false,
+  aggrBurnRecord = false,
+}: {
+  isTestnet?: boolean
+  aggrBurnRecord?: boolean
+}) {
   const IS_TESTNET: boolean = isTestnet
 
   const CKB_RPC_URL = IS_TESTNET
@@ -104,6 +112,7 @@ function createContext({ isTestnet }: { isTestnet: boolean }) {
 
   return {
     isTestnet,
+    aggrBurnRecord,
     indexer: new Indexer(CKB_RPC_URL),
     rpc: new RPC(CKB_RPC_URL),
     scriptConfigs: {

@@ -14,6 +14,12 @@ on:
         options:
           - 'true'
           - 'false'
+      aggrBurn:
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
   schedule:
     - cron: "10 16 * * *"
 

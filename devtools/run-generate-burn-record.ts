@@ -68,7 +68,7 @@ async function run() {
 
       // if today is the last day of the week, aggregate the burn records
       const isEndOfTheWeek = TODAY.day() === 6
-      if (isEndOfTheWeek) {
+      if (isEndOfTheWeek || context.aggrBurnRecord) {
         logger.info(`Start aggregating burn records`)
         await writeAggrBurnRecords()
       }
