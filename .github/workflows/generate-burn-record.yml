@@ -6,6 +6,14 @@ permissions:
 
 on:
   workflow_dispatch:
+    inputs:
+      testnet:
+        default: 'false'
+        required: true
+        type: choice
+        options:
+          - 'true'
+          - 'false'
   schedule:
     - cron: "10 16 * * *"
 
@@ -41,8 +49,7 @@ jobs:
 
       - name: Generate burn records
         id: generate-burn-records
-        # TODO: remove testnet flag
-        run: bun devtools/run-generate-burn-record.ts --testnet true
+        run: bun devtools/run-generate-burn-record.ts --testnet ${{ inputs.testnet || 'false' }}
 
       - name: Configure Git
         run: |
@@ -52,9 +59,8 @@ jobs:
       - name: Create commit
         id: commit
         run: |
-          git add ./.data
-          # TODO: remove testnet folder
-          git add ./.data-testnet
+          git add .data
+          [ -d .data-testnet ] && git add .data-testnet
           git diff --quiet && git diff --staged --quiet || \
           git commit -m "chore: update burn records ${{ steps.generate-burn-records.outputs.from_block}} to ${{steps.generate-burn-records.outputs.to_block}}"
           echo "commit_hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
