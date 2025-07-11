@@ -308,7 +308,7 @@ export type BurnRecord = {
 
 export function mapToBurnRecord(resolvedTx: ResolvedTransaction): BurnRecord[] {
   if (resolvedTx.outputs.some((output) => output.cellOutput.type != null)) {
-    logger.info(
+    logger.warn(
       `Invalid burn tx found: ${resolvedTx.hash}, the output type is not null`,
     )
     return []
@@ -339,7 +339,7 @@ export function mapToBurnRecord(resolvedTx: ResolvedTransaction): BurnRecord[] {
       return {
         source: tokenInfo.source,
         evmTokenAddress: tokenInfo.address,
-        evmReceiverAddress: '0x' + lock.args.slice(2, 42),
+        evmReceiverAddress: '0x' + lock.args.slice(4, 44),
         formattedAmount:
           formatUnit(amount, tokenInfo.decimal) + ' ' + tokenInfo.symbol,
         amount: amount.toString(),
