@@ -8,18 +8,18 @@ on:
   workflow_dispatch:
     inputs:
       testnet:
-        default: 'false'
+        default: "false"
         required: true
         type: choice
         options:
-          - 'true'
-          - 'false'
+          - "true"
+          - "false"
       aggrBurn:
-        default: 'false'
+        default: "false"
         type: choice
         options:
-          - 'true'
-          - 'false'
+          - "true"
+          - "false"
   schedule:
     - cron: "10 16 * * *"
 
@@ -55,7 +55,10 @@ jobs:
 
       - name: Generate burn records
         id: generate-burn-records
-        run: bun devtools/run-generate-burn-record.ts --testnet ${{ inputs.testnet || 'false' }}
+        run: |
+          bun devtools/run-generate-burn-record.ts \
+            --testnet ${{ inputs.testnet || 'false' }} \
+            --aggrBurn ${{ inputs.aggrBurn || 'false' }}
 
       - name: Configure Git
         run: |
