@@ -1,6 +1,7 @@
 import type { Cell, Indexer, OutPoint, Script } from '@ckb-lumos/lumos'
 import { Uint128 } from '@ckb-lumos/lumos/codec'
 import { encodeToAddress, parseAddress } from '@ckb-lumos/lumos/helpers'
+import * as R from 'remeda'
 import {
   bufferCount,
   catchError,
@@ -53,6 +54,7 @@ export type ForceBridgeHelper = {
     {
       txHash: string
       timestamp: number
+      blockNumber: number
       tokens: (TokenInfo & { tokenAmountUnit: bigint })[]
     }[]
   >
@@ -170,6 +172,7 @@ export function createForceBridgeHelper(): ForceBridgeHelper {
                 map(({ tx, block }) => ({
                   ...tx.transaction,
                   timestamp: block.timestamp,
+                  blockNumber: block.number,
                   txHash: v.txHash,
                 })),
               ),
@@ -231,7 +234,20 @@ export function createForceBridgeHelper(): ForceBridgeHelper {
           })
 
           return tokens.length
-            ? { txHash: tx.hash, timestamp: +tx.timestamp, tokens }
+            ? {
+                txHash: tx.hash,
+                timestamp: +tx.timestamp,
+                tokens: R.pipe(
+                  tokens,
+                  R.groupBy(R.prop('sudtArgs')),
+                  R.mapValues((v) => ({
+                    ...v[0],
+                    tokenAmountUnit: R.sumBy(v, R.prop('tokenAmountUnit')),
+                  })),
+                  R.values(),
+                ),
+                blockNumber: +tx.blockNumber,
+              }
             : null
         }),
         filter((v): v is NonNullable<typeof v> => !!v),

@@ -2,61 +2,78 @@ import { NextRequest } from 'next/server'
 import * as R from 'remeda'
 
 function parseFileContent(content: string) {
-  const lines = content.split('\n')
+  const lines = content.split(/\r?\n/)
   return lines
     .slice(1)
     .map((v) => {
       const values = v.split(',')
-      if (!values[0] || !values[1]) return
+      // source,evmTokenAddress,evmReceiverAddress,formattedAmount,amount,sudtArgs,burnTxHash,transferTxHash
+      if (!values[5] || !values[6] || !values[7]) return
       return {
-        ckbTxHash: values[0],
-        sudtArgs: values[1],
-        compensationHash: values[6],
+        ckbTxHash: values[6],
+        sudtArgs: values[5],
+        compensationHash: values[7],
       }
     })
     .filter((v) => !!v)
 }
 
+async function readGithub<R extends { path: string; name: string }>(
+  githubAPIUrl: string,
+) {
+  const res = await fetch(githubAPIUrl)
+  return (await res.json()) as R[]
+}
+
+function splitBlockFromFileName(fileName: string) {
+  const fileNameWithoutType = fileName.split('.')[0]
+  const blocks = fileNameWithoutType.split('-').slice(1)
+  if (blocks.length !== 2)
+    throw new Error(`${fileName} is not a valid file name`)
+  return blocks.map((v) => +v)
+}
+
+async function queryAllCsv(githubApiPrefix: string, fileDir: string) {
+  const dirs = await readGithub(`${githubApiPrefix}${fileDir}`)
+  const files = await Promise.all(
+    dirs.map((v) => readGithub(`${githubApiPrefix}${v.path}`)),
+  )
+  const allFiles = files.flat()
+  return allFiles
+    .filter((v) => v.name.endsWith('.csv') && !v.name.startsWith('burn-aggr'))
+    .map((v) => ({
+      ...v,
+      blockRange: splitBlockFromFileName(v.name),
+    }))
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
-  const dates = searchParams.get('dates')?.split(',')
-  if (!dates || !dates.length)
+  const blocks = searchParams.get('blocks')?.split(',')
+  if (!blocks || !blocks.length)
     return Response.json(
-      { message: 'dates parameter is required' },
+      { message: 'blocks parameter is required' },
       { status: 400 },
     )
   const githubRepo = process.env.GITHUB_REPO
-  if (!githubRepo)
+  const githubCsvPath = process.env.GITHUB_CSV_PATH
+  if (!githubRepo || !githubCsvPath)
     return Response.json(
-      { message: 'GITHUB_REPO environment variable is not set' },
+      {
+        message:
+          'GITHUB_REPO or GITHUB_CSV_PATH environment variable is not set',
+      },
       { status: 500 },
     )
-  const githubRepoCsvPath = process.env.GITHUB_CSV_PATH ?? 'compensation'
-  const res = await fetch(
-    `https://api.github.com/repos${githubRepo}/contents/${githubRepoCsvPath}`,
-  )
-  if (!res.ok) {
-    return Response.json(
-      { message: 'Failed to fetch from GitHub' },
-      { status: 502 },
-    )
-  }
-  const files = await res.json()
-  if (!Array.isArray(files)) {
-    console.error('Unexpected response from GitHub API:', files)
-    return Response.json(
-      { message: 'Unexpected response from GitHub API' },
-      { status: 502 },
-    )
-  }
-  const typedFiles = files as { path: string; name: string }[]
-  const requestFiles = typedFiles.filter((v) =>
-    dates.includes(v.name.split('.')[0]),
+  const githubAPIPrefix = `https://api.github.com/repos/${githubRepo}/contents/`
+  const files = await queryAllCsv(githubAPIPrefix, githubCsvPath)
+  const requestFiles = files.filter((v) =>
+    blocks.some((b) => v.blockRange[0] <= +b && v.blockRange[1] >= +b),
   )
   const fileContents = (
     await Promise.all(
       requestFiles.map((f) =>
-        fetch(`https://api.github.com/repos${githubRepo}/contents/${f.path}`)
+        fetch(`${githubAPIPrefix}${f.path}`)
           .then((res) => res.json() as unknown as { content: string })
           .then((res) =>
             parseFileContent(Buffer.from(res.content, 'base64').toString()),

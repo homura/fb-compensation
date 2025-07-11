@@ -60,6 +60,7 @@ export default function History() {
     {
       txHash: string
       timestamp: number
+      blockNumber: number
       tokens: (TokenInfo & { tokenAmountUnit: bigint })[]
     }[]
   >([])
@@ -68,19 +69,19 @@ export default function History() {
     const forcebridgeHelper = createForceBridgeHelper()
     forcebridgeHelper.fetchBurnTxs(ckbAddress).then(setBurnTxs)
   }, [ckbAddress])
-  const burnDates = useMemo(
-    () => burnTxs.map((v) => dayjs(v.timestamp).format('YYYY-MM-DD')).join(','),
+  const burnBlockNumbers = useMemo(
+    () => [...new Set(burnTxs.map((v) => v.blockNumber))].join(','),
     [burnTxs],
   )
   const [compensationTxs, setCompensationTxs] = useState<
     Record<string, Record<string, string>>
   >({})
   useEffect(() => {
-    if (!burnDates) return
-    fetch('/api?dates=' + burnDates)
+    if (!burnBlockNumbers) return
+    fetch('/api?blocks=' + burnBlockNumbers)
       .then((res) => res.json())
       .then(setCompensationTxs)
-  }, [burnDates])
+  }, [burnBlockNumbers])
 
   return (
     <div>
