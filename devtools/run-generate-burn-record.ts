@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import { EOL } from 'node:os'
 import { join } from 'node:path'
+import { parseArgs } from 'node:util'
 
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc'
@@ -21,9 +22,10 @@ import {
 import {
   aggregateBurnRecords,
   BurnRecord,
-  context,
   fetchBurnSummaries,
   fetchTransactions,
+  getDataDir,
+  initContext,
   logger,
   mapToBurnRecord,
   resolveTransaction,
@@ -35,6 +37,17 @@ const CKB_CONFIRMATION_BLOCK_COUNT = 24
 
 const UTC_OFFSET = 8
 const TODAY = dayjs().subtract(1, 'day').utcOffset(UTC_OFFSET)
+
+const {
+  values: { testnet, aggrBurn },
+} = parseArgs({
+  options: {
+    testnet: { type: 'string' },
+    aggrBurn: { type: 'string' },
+  },
+})
+
+const context = initContext({ isTestnet: testnet === 'true' })
 
 async function run() {
   logger.info(`Generate burn records for ${TODAY.format('YYYY-MM-DD')}`)
@@ -68,7 +81,7 @@ async function run() {
 
       // if today is the last day of the week, aggregate the burn records
       const isEndOfTheWeek = TODAY.day() === 6
-      if (isEndOfTheWeek || context.aggrBurnRecord) {
+      if (isEndOfTheWeek || aggrBurn === 'true') {
         logger.info(`Start aggregating burn records`)
         await writeAggrBurnRecords()
       }
@@ -108,14 +121,6 @@ async function getLastSavedBlockNumber(): Promise<undefined | number> {
     })
 }
 
-async function getDataDir(): Promise<string> {
-  const dataFolder = context.isTestnet ? '.data-testnet' : '.data'
-  await fs
-    .access(dataFolder, fs.constants.F_OK)
-    .catch(() => fs.mkdir(dataFolder))
-  return dataFolder
-}
-
 async function getCurrentWeekDir(): Promise<string> {
   const dataFolder = await getDataDir()
   const weekStart = TODAY.startOf('week').format('YYYYMMDD')
@@ -132,7 +137,10 @@ async function writeBurnRecords(
 ): Promise<void> {
   const currentFolder = await getCurrentWeekDir()
   const fileName = `burn-${fromBlock}-${toBlock}.csv`
-  await fs.writeFile(join(currentFolder, fileName), unparse(records))
+  await fs.writeFile(
+    join(currentFolder, fileName),
+    unparse(records, { header: true }),
+  )
 }
 
 async function writeAggrBurnRecords() {
@@ -184,7 +192,7 @@ async function writeAggrBurnRecords() {
     const aggrBurnRecords = aggregateBurnRecords(records)
     fs.writeFile(
       join(currentFolder, `burn-aggr-${fromBlock}-${toBlock}.csv`),
-      unparse(aggrBurnRecords),
+      unparse(aggrBurnRecords, { header: true }),
     )
   })
 }

@@ -1,4 +1,4 @@
-import { parseArgs } from 'node:util'
+import fs from 'node:fs/promises'
 
 import {
   BI,
@@ -35,7 +35,6 @@ import {
   take,
 } from 'rxjs'
 
-import { Indexer } from '@/sdk'
 import TestnetTokens from '@/sdk/forcebridge/testnet-tokens.json'
 import MainnetTokens from '@/sdk/forcebridge/tokens.json'
 
@@ -48,26 +47,29 @@ export const logger: {
   error: (...msg: unknown[]) => void
 } = console
 
-export const context = (() => {
-  const { values } = parseArgs({
-    options: {
-      testnet: { type: 'string' },
-      aggrBurn: { type: 'string' },
-    },
-  })
+let context: Context | undefined
+export function initContext({ isTestnet = false }: { isTestnet?: boolean }) {
+  context = createContext({ isTestnet })
+  return context
+}
 
-  const isTestnet = values.testnet === 'true'
-  const aggrBurnRecord = values.aggrBurn === 'true'
-  return createContext({ isTestnet, aggrBurnRecord })
-})()
+export function getContext(): Context {
+  asserts(context != null)
+  return context
+}
+
+type Context = {
+  isTestnet: boolean
+  rpc: RPC
+  tokens: TokenInfo[]
+  scriptConfigs: { sudt: ScriptConfig; legacyOmnilock: ScriptConfig }
+}
 
 function createContext({
   isTestnet = false,
-  aggrBurnRecord = false,
 }: {
   isTestnet?: boolean
-  aggrBurnRecord?: boolean
-}) {
+}): Context {
   const IS_TESTNET: boolean = isTestnet
 
   const CKB_RPC_URL = IS_TESTNET
@@ -112,8 +114,6 @@ function createContext({
 
   return {
     isTestnet,
-    aggrBurnRecord,
-    indexer: new Indexer(CKB_RPC_URL),
     rpc: new RPC(CKB_RPC_URL),
     scriptConfigs: {
       sudt: SCRIPT_CONFIG_SUDT,
@@ -124,7 +124,7 @@ function createContext({
 }
 
 function isLegacyOmnilockScript(script: Script): boolean {
-  const { scriptConfigs } = context
+  const { scriptConfigs } = getContext()
   return (
     script.codeHash === scriptConfigs.legacyOmnilock.CODE_HASH &&
     script.hashType === scriptConfigs.legacyOmnilock.HASH_TYPE
@@ -132,7 +132,7 @@ function isLegacyOmnilockScript(script: Script): boolean {
 }
 
 function isSudtScript(script: Script): boolean {
-  const { scriptConfigs } = context
+  const { scriptConfigs } = getContext()
   return (
     script.codeHash === scriptConfigs.sudt.CODE_HASH &&
     script.hashType === scriptConfigs.sudt.HASH_TYPE
@@ -150,7 +150,7 @@ type TokenInfo = {
 }
 
 function getTokenInfo(filter: { sudtArgs: string }): TokenInfo | undefined {
-  const { tokens } = context
+  const { tokens } = getContext()
   return tokens.find((token) => token.sudtArgs === filter.sudtArgs)
 }
 
@@ -180,7 +180,7 @@ export function fetchBurnSummaries({
   fromBlock: BIish
   toBlock?: BIish
 }): Observable<BurnSummary> {
-  const { tokens, rpc, scriptConfigs } = context
+  const { tokens, rpc, scriptConfigs } = getContext()
   const pageSize = 100
 
   const generateSearchKey = (
@@ -238,7 +238,7 @@ export function fetchBurnSummaries({
 export function fetchTransactions(
   txHashes: ObservableInput<Hash>,
 ): Observable<CKBComponents.Transaction> {
-  const { rpc } = context
+  const { rpc } = getContext()
 
   return from(txHashes).pipe(
     map((txHash) => ['getTransaction', txHash] as ['getTransaction', string]),
@@ -251,6 +251,8 @@ export function fetchTransactions(
         >
       ).then<CKBComponents.TransactionWithStatus[]>((txs) => {
         txs.forEach((tx, i) => {
+          asserts(requests[i] != null)
+
           if (!tx.transaction) {
             throw new Error(`Failed to fetch transaction ${requests[i][1]}`)
           }
@@ -343,6 +345,10 @@ export function mapToBurnRecord(resolvedTx: ResolvedTransaction): BurnRecord[] {
         return undefined
       }
 
+      asserts(
+        resolvedTx.inputs[i]?.data != null,
+        `Cannot find data for input#${i} in tx ${resolvedTx.hash}`,
+      )
       const amount = Uint128.unpack(resolvedTx.inputs[i].data)
 
       return {
@@ -360,9 +366,27 @@ export function mapToBurnRecord(resolvedTx: ResolvedTransaction): BurnRecord[] {
     .filter((x) => x != null)
 }
 
-type AggrBurnRecord = Omit<BurnRecord, 'burnTxHash'> & {
-  txHash?: string
+export function startFillTransferTxHash(
+  aggrBurnRecords: AggrBurnRecord[],
+): (burnRecords: BurnRecord[]) => BurnRecord[] {
+  const group = Object.fromEntries(
+    aggrBurnRecords.map((record) => [
+      `${record.sudtArgs}-${record.evmReceiverAddress}`,
+      record.transferTxHash,
+    ]),
+  )
+
+  return (burnRecords: BurnRecord[]) =>
+    burnRecords.map((record) => {
+      return {
+        ...record,
+        transferTxHash:
+          group[`${record.sudtArgs}-${record.evmReceiverAddress}`] ?? '',
+      }
+    })
 }
+
+export type AggrBurnRecord = Omit<BurnRecord, 'burnTxHash'>
 
 export function aggregateBurnRecords(records: BurnRecord[]): AggrBurnRecord[] {
   const aggregatedRecords = Object.groupBy(
@@ -372,6 +396,10 @@ export function aggregateBurnRecords(records: BurnRecord[]): AggrBurnRecord[] {
   return Object.entries(aggregatedRecords)
     .reduce((acc, [key, group]) => {
       const [sudtArgs, evmReceiverAddress] = key.split('-')
+      asserts(
+        sudtArgs != null && evmReceiverAddress != null,
+        'Invalid aggr record',
+      )
 
       if (!group) {
         throw new Error(`Cannot find group of the key: ${key}`)
@@ -444,4 +472,24 @@ export function getEnv(key: string, defaultValue?: string): string {
     throw new Error(`Environment variable ${key} is not set`)
   }
   return (value || defaultValue)!
+}
+
+const DATA_DIR = '.data'
+const DATA_DIR_TESTNET = '.data-testnet'
+
+export async function getDataDir(): Promise<string> {
+  const dataFolder = getContext().isTestnet ? DATA_DIR_TESTNET : DATA_DIR
+  await fs
+    .access(dataFolder, fs.constants.F_OK)
+    .catch(() => fs.mkdir(dataFolder))
+  return dataFolder
+}
+
+export function asserts(
+  condition: unknown,
+  message = 'Assertion failed',
+): asserts condition {
+  if (!condition) {
+    throw new Error(message)
+  }
 }
