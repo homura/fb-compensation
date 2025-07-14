@@ -133,14 +133,14 @@ async function getLastSavedBlockNumber(): Promise<undefined | number> {
     .then((fileNames) => {
       if (!fileNames) return undefined
       const latestRecord = fileNames
-        .filter((fileName) => fileName.match(REGEX_BURN_RECORD))
-        .sort((a, b) => a.localeCompare(b))
+        .map((fileName) =>
+          Number(fileName.match(REGEX_BURN_RECORD)?.at(2) ?? -1),
+        )
+        .sort((a, b) => a - b)
         .at(-1)
 
       if (!latestRecord) return undefined
-
-      const [, toBlock] = latestRecord.match(REGEX_BURN_RECORD)!.slice(1)
-      return Number(toBlock)
+      return latestRecord
     })
 }
 
