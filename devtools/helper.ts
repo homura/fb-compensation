@@ -487,9 +487,9 @@ export async function getDataDir(): Promise<string> {
 
 export function asserts(
   condition: unknown,
-  message = 'Assertion failed',
+  message: string | (() => string) = 'Assertion failed',
 ): asserts condition {
   if (!condition) {
-    throw new Error(message)
+    throw new Error(typeof message === 'function' ? message() : message)
   }
 }

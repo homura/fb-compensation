@@ -54,8 +54,8 @@ async function run() {
 
   asserts(
     parsedAggrBurnRecords.errors.length === 0,
-    `Invalid aggr record ${aggrRecordPaths}` +
-      JSON.stringify(parsedAggrBurnRecords.errors),
+    () =>
+      `Invalid aggr record ${aggrRecordPaths} ${JSON.stringify(parsedAggrBurnRecords.errors)}, ${JSON.stringify(parsedAggrBurnRecords.data)}`,
   )
 
   const fillTransferTxHash = startFillTransferTxHash(parsedAggrBurnRecords.data)
@@ -83,8 +83,8 @@ async function run() {
       ),
     )
     .subscribe(({ content, path }) => {
-      writeFile(path, unparse(content, { header: true }))
+      void writeFile(path, unparse(content, { header: true }))
     })
 }
 
-run()
+void run()
