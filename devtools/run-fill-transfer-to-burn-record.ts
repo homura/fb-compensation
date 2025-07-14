@@ -45,7 +45,7 @@ async function run() {
   )
 
   const aggrRecord = await readFile(join(currentDir, aggrRecordPaths[0])).then(
-    (data) => data.toString(),
+    (data) => data.toString().trim(),
   )
 
   const parsedAggrBurnRecords = parse<AggrBurnRecord>(aggrRecord, {
