@@ -66,6 +66,7 @@ jobs:
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
 
       - name: Create commit
+        if: steps.generate-burn-records.outputs.from_block != '' && steps.generate-burn-records.outputs.to_block != ''
         id: commit
         run: |
           git add .data

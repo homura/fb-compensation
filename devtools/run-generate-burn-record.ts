@@ -55,10 +55,21 @@ async function run() {
     logger.info('Run in testnet mode')
   }
 
-  const lastBlockNumber = await getLastSavedBlockNumber()
+  const tipBlockNumber = await context.rpc
+    .getIndexerTip()
+    .then((res) => Number(res.blockNumber))
+  const lastSavedBlockNumber = await getLastSavedBlockNumber()
   const defaultFromBlock = context.isTestnet ? 17000000 : 16720000
 
-  const fromBlock = lastBlockNumber ? lastBlockNumber + 1 : defaultFromBlock
+  const fromBlock = lastSavedBlockNumber
+    ? lastSavedBlockNumber + 1
+    : defaultFromBlock
+
+  if (tipBlockNumber <= fromBlock) {
+    logger.info(`No new blocks to process`)
+    return
+  }
+
   // make sure the toBlock is confirmed
   const toBlock = await context.rpc
     .getIndexerTip()
