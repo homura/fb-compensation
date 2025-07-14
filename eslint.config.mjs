@@ -1,3 +1,4 @@
+
 import { FlatCompat } from '@eslint/eslintrc'
 import { dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -19,6 +20,13 @@ const eslintConfig = [
       'plugin:jsx-a11y/recommended',
     ],
     plugins: ['prettier', 'jsx-a11y', 'simple-import-sort', 'unused-imports'],
+    // Add parser options for TypeScript
+    parserOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      project: './tsconfig.json', // Path to your tsconfig.json
+      tsconfigRootDir: __dirname,
+    },
     rules: {
       'prettier/prettier': [
         'error',
@@ -46,6 +54,7 @@ const eslintConfig = [
       'simple-import-sort/imports': 'error',
       'simple-import-sort/exports': 'error',
       'unused-imports/no-unused-imports': 'error',
+      '@typescript-eslint/no-floating-promises': 'error'
     },
     ignorePatterns: ['src/components/ui/*'],
   }),

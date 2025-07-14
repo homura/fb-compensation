@@ -154,7 +154,7 @@ export default function BurnTokens() {
   useEffect(() => {
     if (!ckbAddress) return
     const forcebridgeHelper = createForceBridgeHelper()
-    forcebridgeHelper.fetchUserTokenCells(ckbAddress).then(setUserTokenCells)
+    void forcebridgeHelper.fetchUserTokenCells(ckbAddress).then(setUserTokenCells)
   }, [ckbAddress])
   const [showZeroToken, setShowZeroToken] = useState(false)
   const userTokens = useMemo(() => {

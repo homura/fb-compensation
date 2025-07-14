@@ -62,10 +62,11 @@ export default function Home() {
   const { address } = useAccount()
   const { disconnect } = useDisconnect()
   const ckbAddress = address ? generateCKBAddress(address) : ''
-  const onCopy = (text: string) => {
-    navigator.clipboard.writeText(text)
-    toast.success('Copied', { position: 'top-center' })
-  }
+  const onCopy = (text: string) =>
+    navigator.clipboard
+      .writeText(text)
+      .then(() => toast.success('Copied', { position: 'top-center' }))
+
   return (
     <div className="w-full">
       <div className="grid grid-cols-3 p-4">

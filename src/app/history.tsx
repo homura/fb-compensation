@@ -67,7 +67,7 @@ export default function History() {
   useEffect(() => {
     if (!ckbAddress) return
     const forcebridgeHelper = createForceBridgeHelper()
-    forcebridgeHelper.fetchBurnTxs(ckbAddress).then(setBurnTxs)
+    void forcebridgeHelper.fetchBurnTxs(ckbAddress).then(setBurnTxs)
   }, [ckbAddress])
   const burnBlockNumbers = useMemo(
     () => [...new Set(burnTxs.map((v) => v.blockNumber))].join(','),
@@ -78,7 +78,7 @@ export default function History() {
   >({})
   useEffect(() => {
     if (!burnBlockNumbers) return
-    fetch('/api?blocks=' + burnBlockNumbers)
+    void fetch('/api?blocks=' + burnBlockNumbers)
       .then((res) => res.json())
       .then(setCompensationTxs)
   }, [burnBlockNumbers])

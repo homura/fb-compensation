@@ -16,6 +16,7 @@ import {
   mergeMap,
   of,
   reduce,
+  switchMap,
   toArray,
 } from 'rxjs'
 
@@ -82,21 +83,32 @@ async function run() {
   )
 
   fetchTransactions(burnTxHash$)
-    .pipe(resolveTransaction, mergeMap(mapToBurnRecord), toArray())
-    .subscribe(async (records) => {
-      await writeBurnRecords(records, fromBlock, toBlock)
-      if (process.env.GITHUB_OUTPUT) {
-        const output = `${EOL}from_block=${fromBlock}${EOL}to_block=${toBlock}${EOL}`
-        await fs.appendFile(process.env.GITHUB_OUTPUT, output)
-      }
+    .pipe(
+      resolveTransaction,
+      mergeMap(mapToBurnRecord),
+      toArray(),
+      switchMap((records) => processBurnRecords(records, fromBlock, toBlock)),
+    )
+    .subscribe({ error: logger.error, complete: () => logger.info('Done') })
+}
 
-      // if today is the last day of the week, aggregate the burn records
-      const isEndOfTheWeek = TODAY.day() === 6
-      if (isEndOfTheWeek || aggrBurn === 'true') {
-        logger.info(`Start aggregating burn records`)
-        await writeAggrBurnRecords()
-      }
-    })
+async function processBurnRecords(
+  records: BurnRecord[],
+  fromBlock: number,
+  toBlock: number,
+) {
+  await writeBurnRecords(records, fromBlock, toBlock)
+  if (process.env.GITHUB_OUTPUT) {
+    const output = `${EOL}from_block=${fromBlock}${EOL}to_block=${toBlock}${EOL}`
+    await fs.appendFile(process.env.GITHUB_OUTPUT, output)
+  }
+
+  // if today is the last day of the week, aggregate the burn records
+  const isEndOfTheWeek = TODAY.day() === 6
+  if (isEndOfTheWeek || aggrBurn === 'true') {
+    logger.info(`Start aggregating burn records`)
+    await writeAggrBurnRecords()
+  }
 }
 
 // .data folder is structured as the following:
@@ -201,11 +213,11 @@ async function writeAggrBurnRecords() {
 
   return lastValueFrom(burnRecords$).then(({ records, fromBlock, toBlock }) => {
     const aggrBurnRecords = aggregateBurnRecords(records)
-    fs.writeFile(
+    return fs.writeFile(
       join(currentFolder, `burn-aggr-${fromBlock}-${toBlock}.csv`),
       unparse(aggrBurnRecords, { header: true }),
     )
   })
 }
 
-run()
+void run()
