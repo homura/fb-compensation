@@ -15,7 +15,7 @@ on:
           - "true"
           - "false"
       aggrWeekDir:
-        description: "Format: {yyyymmdd}-{yyyymmdd}"
+        description: "Aggregated week directory, format: {yyyymmdd}-{yyyymmdd}"
         required: true
         type: string
 
